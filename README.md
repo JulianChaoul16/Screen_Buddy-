@@ -4,6 +4,22 @@ A tiny animated pet that lives at the bottom of your screen. He walks, naps, eat
 
 This was a lazy Friday night project I decided to do. Mine is a straw-hat-wearing Luffy fan pet. The repo ships with an original pixel-art monkey so it works out of the box, and you can drop in any sprites you like to make your own buddy.
 
+![Screen Buddy walking, eating, dancing and napping above the taskbar](docs/demo.gif)
+
+![Every activity: walk, idle, eat, sleep, dance, wave, stretch](docs/activities.png)
+
+## Download (no coding needed)
+
+1. Go to the [latest release](https://github.com/JulianChaoul16/Screen_Buddy-/releases/latest).
+2. Download **ScreenBuddy.exe**.
+3. Double-click it. Your buddy appears at the bottom of your screen, and a small icon appears in the system tray near the clock.
+
+The first launch can take a few seconds. To have him start every time you turn on your PC, right-click the tray icon and tick **Start with Windows**. To close him, right-click the tray icon and choose **Quit**.
+
+> **"Windows protected your PC"?** That warning appears for apps from small developers that aren't code-signed. Click **More info**, then **Run anyway**. If you'd rather not, you can run it from source using the steps below.
+
+The download comes with the default monkey. To use your own sprites, run it from source (below).
+
 ## Features
 
 - **Lives on your desktop.** He's a frameless, always-on-top window that walks along the taskbar and turns around at the screen edges.
@@ -14,7 +30,7 @@ This was a lazy Friday night project I decided to do. Mine is a straw-hat-wearin
 - **Starts with Windows.** One checkbox in the tray menu, with no console window.
 - **Bring your own sprites.** Any folder of PNG frames works, and a helper script can cut up a sprite sheet for you.
 
-## Quick start
+## Run from source
 
 You need Python 3.10 or newer. The tray and autostart features are Windows-only; the pet itself should run anywhere PySide6 does.
 
@@ -93,6 +109,19 @@ Everything lives in two tables at the top of `main.py`:
 | `make_sprites.py` | Generates the default pixel-art monkey |
 | `slice_sheet.py` | Cuts a sprite sheet into activity folders |
 | `assets/` | Sprite frames |
+| `docs/` | README images |
+| `.github/workflows/release.yml` | Builds `ScreenBuddy.exe` for each release |
+
+## Making a release
+
+Tag a version and push the tag:
+
+```bash
+git tag v1.0
+git push origin v1.0
+```
+
+GitHub Actions then builds `ScreenBuddy.exe` with PyInstaller and attaches it to a new Release. Only files committed to the repo get bundled, and the build refuses to run if `assets/luffy/` is present.
 
 ## A note on sprites and copyright
 

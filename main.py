@@ -13,7 +13,9 @@ from PySide6.QtWidgets import (
     QSystemTrayIcon,
 )
 
-ASSETS = Path(__file__).parent / "assets"
+# Packaged .exe unpacks its files to sys._MEIPASS; otherwise use this folder
+ASSETS = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "assets"
+FROZEN = getattr(sys, "frozen", False)
 
 # Shortcut in the Windows Startup folder = "Start with Windows"
 STARTUP_LINK = (
@@ -26,14 +28,18 @@ def set_autostart(on):
     if not on:
         STARTUP_LINK.unlink(missing_ok=True)
         return
-    # pythonw.exe = no console window
-    pythonw = Path(sys.executable).with_name("pythonw.exe")
-    script = Path(__file__).resolve()
+    if FROZEN:
+        # Packaged .exe: launch it directly
+        target, args = Path(sys.executable), ""
+    else:
+        # pythonw.exe = no console window
+        target = Path(sys.executable).with_name("pythonw.exe")
+        args = f'"{Path(__file__).resolve()}"'
     ps = (
         f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{STARTUP_LINK}');"
-        f"$s.TargetPath = '{pythonw}';"
-        f"$s.Arguments = '\"{script}\"';"
-        f"$s.WorkingDirectory = '{script.parent}';"
+        f"$s.TargetPath = '{target}';"
+        f"$s.Arguments = '{args}';"
+        f"$s.WorkingDirectory = '{target.parent}';"
         "$s.Save()"
     )
     subprocess.run(

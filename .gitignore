@@ -4,3 +4,8 @@ __pycache__/
 
 # Downloaded Luffy sprites (personal use only - don't publish)
 assets/luffy/
+
+# PyInstaller output
+build/
+dist/
+*.spec
