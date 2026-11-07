@@ -26,17 +26,22 @@ ACTIVITIES = {
     "dance": (120, (3000, 5000), False),
     "wave": (220, (1500, 2500), False),
     "stretch": (90, (1500, 2500), False),
+    "carry": (120, (0, 0), False),  # while dragged/falling (no timeout)
+    "land": (90, (900, 900), False),  # plays once after a drop
 }
 
 # How often each activity gets picked after the current one finishes
+# (0 = never picked at random; only triggered by dragging)
 WEIGHTS = {
-    "walk": 5,
+    "walk": 3,
     "idle": 3,
     "eat": 2,
-    "sleep": 1,
+    "sleep": 3,
     "dance": 2,
     "wave": 1,
     "stretch": 1,
+    "carry": 0,
+    "land": 0,
 }
 
 
@@ -90,6 +95,14 @@ class DesktopPet(QLabel):
 
         # Paused by a left click?
         self.is_paused = False
+
+        # Dragging / falling
+        self.ground_y = self.y_pos
+        self.press_pos = None  # where the mouse went down (global)
+        self.grab_offset = None  # set once a drag actually starts
+        self.fall_speed = 0
+        self.fall_timer = QTimer(self)
+        self.fall_timer.timeout.connect(self.fall_step)
 
         # Movement timer
         self.update_interval = 30
@@ -176,16 +189,58 @@ class DesktopPet(QLabel):
     # ------------------------------------------------------------ input
 
     def mousePressEvent(self, event):
-        # Left click pauses / resumes everything
         if event.button() == Qt.MouseButton.LeftButton:
-            if self.is_paused:
-                self.is_paused = False
-                self.set_state(self.state)
-            else:
-                self.is_paused = True
-                self.move_timer.stop()
-                self.anim_timer.stop()
-                self.behavior_timer.stop()
+            self.press_pos = event.globalPosition().toPoint()
+
+    def mouseMoveEvent(self, event):
+        if self.press_pos is None:
+            return
+        pos = event.globalPosition().toPoint()
+
+        # Start a drag once the mouse has moved a few pixels
+        if self.grab_offset is None:
+            if (pos - self.press_pos).manhattanLength() < 5:
+                return
+            self.grab_offset = self.press_pos - self.pos()
+            self.fall_timer.stop()
+            self.is_paused = False
+            self.set_state("carry")
+            self.behavior_timer.stop()
+
+        self.x_pos, self.y_pos = (pos - self.grab_offset).toTuple()
+        self.move(self.x_pos, self.y_pos)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        dragged = self.grab_offset is not None
+        self.press_pos = self.grab_offset = None
+
+        if dragged:
+            # Let go: fall to the ground
+            self.fall_speed = 0
+            self.fall_timer.start(self.update_interval)
+        else:
+            self.toggle_pause()
+
+    def fall_step(self):
+        self.fall_speed += 2  # gravity
+        self.y_pos = min(self.y_pos + self.fall_speed, self.ground_y)
+        self.move(self.x_pos, self.y_pos)
+        if self.y_pos >= self.ground_y:
+            self.fall_timer.stop()
+            self.set_state("land")
+
+    def toggle_pause(self):
+        # Left click (without dragging) pauses / resumes everything
+        if self.is_paused:
+            self.is_paused = False
+            self.set_state(self.state)
+        else:
+            self.is_paused = True
+            self.move_timer.stop()
+            self.anim_timer.stop()
+            self.behavior_timer.stop()
 
     def contextMenuEvent(self, event):
         # Right click: pick an activity or exit
@@ -193,7 +248,8 @@ class DesktopPet(QLabel):
 
         actions = {}
         for name in self.frames:
-            actions[menu.addAction(name.capitalize())] = name
+            if WEIGHTS.get(name, 1):  # hide drag-only states
+                actions[menu.addAction(name.capitalize())] = name
         menu.addSeparator()
         exit_action = menu.addAction("Exit")
 

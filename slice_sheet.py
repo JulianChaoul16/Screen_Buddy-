@@ -17,7 +17,7 @@ from PySide6.QtGui import QColor, QFont, QGuiApplication, QImage, QPainter, QPen
 
 PACK = Path(__file__).parent / "assets" / "luffy"
 SHEET = PACK / "luffy_sheet.png"
-SCALE = 2  # how many screen pixels per sprite pixel
+SCALE = 1  # how many screen pixels per sprite pixel
 MIN_GAP = 2  # empty columns needed to split two sprites
 FLIP = True  # sheet sprites face left; the pet expects right-facing frames
 
@@ -29,6 +29,9 @@ PICKS = {
     "dance": (28, list(range(9))),
     "wave": (60, list(range(5))),
     "eat": (37, list(range(11))),
+    "sleep": (47, [0, 1]),
+    "carry": (47, [2, 3, 4, 5]),
+    "land": (26, list(range(10))),
 }
 
 
