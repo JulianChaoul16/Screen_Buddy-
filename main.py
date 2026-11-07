@@ -45,10 +45,21 @@ class DesktopPet(QLabel):
         # Direction: 1 = right, -1 = left
         self.direction = 1
 
+        # iS THIS GUY moving 
+        self.is_moving = True
+
+
         # Create a timer to update movement
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_position)
         self.timer.start(30)
+        self.update_interval = 30
+
+        self.state = "WALKING"
+
+        self.behavior_timer = QTimer(self)
+        self.behavior_timer.timeout.connect(self.change_behavior)
+        self.behavior_timer.start(3000)
 
     def update_position(self):
         # Move horizontally
@@ -64,6 +75,35 @@ class DesktopPet(QLabel):
             self.direction = 1
 
         self.move(self.x_pos, self.y_pos)
+
+    def stop_movement(self):
+
+        self.timer.stop()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self.is_moving:
+                self.stop_movement()
+                self.is_moving = False
+            else: 
+                self.timer.start(self.update_interval)
+                self.is_moving = True
+
+    
+    def change_behavior(self):
+        if self.state == "WALKING":
+            self.state = "IDLE"
+            self.stop_movement()
+
+        elif self.state == "IDLE":
+            self.state = "WALKING"
+            self.timer.start(30)
+
+        
+
+
+        
+        
 
     def contextMenuEvent(self, event):
         # Show a menu when right-clicked
