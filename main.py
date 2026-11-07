@@ -1,16 +1,46 @@
+import os
 import random
+import subprocess
 import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap, QTransform
+from PySide6.QtGui import QIcon, QPixmap, QTransform
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
     QMenu,
+    QSystemTrayIcon,
 )
 
 ASSETS = Path(__file__).parent / "assets"
+
+# Shortcut in the Windows Startup folder = "Start with Windows"
+STARTUP_LINK = (
+    Path(os.environ["APPDATA"])
+    / "Microsoft/Windows/Start Menu/Programs/Startup/Desktop Luffy.lnk"
+)
+
+
+def set_autostart(on):
+    if not on:
+        STARTUP_LINK.unlink(missing_ok=True)
+        return
+    # pythonw.exe = no console window
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    script = Path(__file__).resolve()
+    ps = (
+        f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{STARTUP_LINK}');"
+        f"$s.TargetPath = '{pythonw}';"
+        f"$s.Arguments = '\"{script}\"';"
+        f"$s.WorkingDirectory = '{script.parent}';"
+        "$s.Save()"
+    )
+    subprocess.run(
+        ["powershell", "-NoProfile", "-Command", ps],
+        check=True,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
 
 # Use your own sprite pack (assets/luffy/<activity>/*.png) when it's there,
 # otherwise the generated monkey in assets/<activity>/.
@@ -22,21 +52,26 @@ ACTIVITIES = {
     "walk": (90, (4000, 9000), True),
     "idle": (250, (2000, 4000), False),
     "eat": (300, (3000, 5000), False),
-    "sleep": (600, (5000, 9000), False),
+    "sleep": (1000, (30000, 60000), False),  # slow breathing, long naps
     "dance": (120, (3000, 5000), False),
     "wave": (220, (1500, 2500), False),
     "stretch": (90, (1500, 2500), False),
+    "carry": (120, (0, 0), False),  # while dragged/falling (no timeout)
+    "land": (90, (900, 900), False),  # plays once after a drop
 }
 
 # How often each activity gets picked after the current one finishes
+# (0 = never picked at random; only triggered by dragging)
 WEIGHTS = {
-    "walk": 5,
+    "walk": 3,
     "idle": 3,
     "eat": 2,
-    "sleep": 1,
+    "sleep": 18,  # ~60% of picks
     "dance": 2,
     "wave": 1,
     "stretch": 1,
+    "carry": 0,
+    "land": 0,
 }
 
 
@@ -90,6 +125,14 @@ class DesktopPet(QLabel):
 
         # Paused by a left click?
         self.is_paused = False
+
+        # Dragging / falling
+        self.ground_y = self.y_pos
+        self.press_pos = None  # where the mouse went down (global)
+        self.grab_offset = None  # set once a drag actually starts
+        self.fall_speed = 0
+        self.fall_timer = QTimer(self)
+        self.fall_timer.timeout.connect(self.fall_step)
 
         # Movement timer
         self.update_interval = 30
@@ -176,39 +219,108 @@ class DesktopPet(QLabel):
     # ------------------------------------------------------------ input
 
     def mousePressEvent(self, event):
-        # Left click pauses / resumes everything
         if event.button() == Qt.MouseButton.LeftButton:
-            if self.is_paused:
-                self.is_paused = False
-                self.set_state(self.state)
-            else:
-                self.is_paused = True
-                self.move_timer.stop()
-                self.anim_timer.stop()
-                self.behavior_timer.stop()
+            self.press_pos = event.globalPosition().toPoint()
+
+    def mouseMoveEvent(self, event):
+        if self.press_pos is None:
+            return
+        pos = event.globalPosition().toPoint()
+
+        # Start a drag once the mouse has moved a few pixels
+        if self.grab_offset is None:
+            if (pos - self.press_pos).manhattanLength() < 5:
+                return
+            self.grab_offset = self.press_pos - self.pos()
+            self.fall_timer.stop()
+            self.is_paused = False
+            self.set_state("carry")
+            self.behavior_timer.stop()
+
+        self.x_pos, self.y_pos = (pos - self.grab_offset).toTuple()
+        self.move(self.x_pos, self.y_pos)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() != Qt.MouseButton.LeftButton:
+            return
+        dragged = self.grab_offset is not None
+        self.press_pos = self.grab_offset = None
+
+        if dragged:
+            # Let go: fall to the ground
+            self.fall_speed = 0
+            self.fall_timer.start(self.update_interval)
+        else:
+            self.toggle_pause()
+
+    def fall_step(self):
+        self.fall_speed += 2  # gravity
+        self.y_pos = min(self.y_pos + self.fall_speed, self.ground_y)
+        self.move(self.x_pos, self.y_pos)
+        if self.y_pos >= self.ground_y:
+            self.fall_timer.stop()
+            self.set_state("land")
+
+    def toggle_pause(self):
+        # Left click (without dragging) pauses / resumes everything
+        if self.is_paused:
+            self.is_paused = False
+            self.set_state(self.state)
+        else:
+            self.is_paused = True
+            self.move_timer.stop()
+            self.anim_timer.stop()
+            self.behavior_timer.stop()
+
+    def toggle_visible(self):
+        self.setVisible(not self.isVisible())
+
+    def pick(self, name):
+        self.is_paused = False
+        self.set_state(name)
+
+    def fill_menu(self, menu):
+        """One menu, used for both right-clicking Luffy and the tray icon."""
+        menu.clear()
+        for name in self.frames:
+            if WEIGHTS.get(name, 1):  # hide drag-only states
+                menu.addAction(name.capitalize(), lambda n=name: self.pick(n))
+        menu.addSeparator()
+        menu.addAction("Resume" if self.is_paused else "Pause", self.toggle_pause)
+        menu.addAction("Hide" if self.isVisible() else "Show", self.toggle_visible)
+        autostart = menu.addAction(
+            "Start with Windows", lambda: set_autostart(not STARTUP_LINK.exists())
+        )
+        autostart.setCheckable(True)
+        autostart.setChecked(STARTUP_LINK.exists())
+        menu.addSeparator()
+        menu.addAction("Quit", QApplication.quit)
 
     def contextMenuEvent(self, event):
-        # Right click: pick an activity or exit
         menu = QMenu(self)
-
-        actions = {}
-        for name in self.frames:
-            actions[menu.addAction(name.capitalize())] = name
-        menu.addSeparator()
-        exit_action = menu.addAction("Exit")
-
-        selected_action = menu.exec(event.globalPos())
-
-        if selected_action == exit_action:
-            QApplication.quit()
-        elif selected_action in actions:
-            self.is_paused = False
-            self.set_state(actions[selected_action])
+        self.fill_menu(menu)
+        menu.exec(event.globalPos())
 
 
 app = QApplication(sys.argv)
+app.setQuitOnLastWindowClosed(False)  # hiding Luffy shouldn't quit the app
 
 pet = DesktopPet()
 pet.show()
+
+# System tray: left-click shows/hides him, right-click opens the controls
+tray_icon = pet.frames.get("idle", pet.frames["walk"])[1][0]
+tray = QSystemTrayIcon(QIcon(tray_icon), app)
+tray.setToolTip("Desktop Luffy")
+tray_menu = QMenu()
+pet.fill_menu(tray_menu)
+tray_menu.aboutToShow.connect(lambda: pet.fill_menu(tray_menu))
+tray.setContextMenu(tray_menu)
+tray.activated.connect(
+    lambda reason: pet.toggle_visible()
+    if reason == QSystemTrayIcon.ActivationReason.Trigger
+    else None
+)
+tray.show()
 
 sys.exit(app.exec())
