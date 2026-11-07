@@ -1,41 +1,84 @@
 
 import sys
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QApplication, QLabel
-
-# Create our application
-app = QApplication(sys.argv)
-
-# Create our pet
-pet = QLabel("🐒")
-
-# Remove window borders and keep it on top
-pet.setWindowFlags(
-    Qt.WindowType.FramelessWindowHint
-    | Qt.WindowType.WindowStaysOnTopHint
-    | Qt.WindowType.Tool
+from PySide6.QtWidgets import (
+    QApplication,
+    QLabel,
+    QMenu,
 )
 
-# Make the background transparent
-pet.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-# Set the character's font and size
-pet.setFont(QFont("Segoe UI Emoji", 80))
-pet.resize(150, 150)
+class DesktopPet(QLabel):
+    def __init__(self):
+        super().__init__("🐒")
 
-# Find the usable screen area
-screen = app.primaryScreen().availableGeometry()
+        # Window appearance
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
 
-# Position the character at the bottom-right
-x = screen.left() - pet.width() + 1
-y = screen.bottom() - pet.height() + 1
+        self.setAttribute(
+            Qt.WidgetAttribute.WA_TranslucentBackground
+        )
 
-pet.move(x, y)
+        self.setFont(QFont("Segoe UI Emoji", 80))
+        self.resize(150, 150)
 
-# Display the character
+        # Screen dimensions
+        self.screen_area = (
+            QApplication.primaryScreen().availableGeometry()
+        )
+
+        # Starting position
+        self.x_pos = self.screen_area.left()
+        self.y_pos = self.screen_area.bottom() - self.height() + 1
+
+        self.move(self.x_pos, self.y_pos)
+
+        # Movement speed in pixels per update
+        self.speed = 3
+
+        # Direction: 1 = right, -1 = left
+        self.direction = 1
+
+        # Create a timer to update movement
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_position)
+        self.timer.start(30)
+
+    def update_position(self):
+        # Move horizontally
+        self.x_pos += self.speed * self.direction
+
+        # Reverse direction at screen boundaries
+        if self.x_pos + self.width() >= self.screen_area.right() + 1:
+            self.x_pos = self.screen_area.right() - self.width() + 1
+            self.direction = -1
+
+        elif self.x_pos <= self.screen_area.left():
+            self.x_pos = self.screen_area.left()
+            self.direction = 1
+
+        self.move(self.x_pos, self.y_pos)
+
+    def contextMenuEvent(self, event):
+        # Show a menu when right-clicked
+        menu = QMenu(self)
+
+        exit_action = menu.addAction("Exit")
+        selected_action = menu.exec(event.globalPos())
+
+        if selected_action == exit_action:
+            QApplication.quit()
+
+
+app = QApplication(sys.argv)
+
+pet = DesktopPet()
 pet.show()
 
-# Start the application event loop
 sys.exit(app.exec())
