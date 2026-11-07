@@ -378,7 +378,37 @@ def render(name, fn, i, n):
             text(p, "hi!", SIZE - 40, 28, 13)
 
     p.end()
-    return img
+    return pixelate(img)
+
+
+# Pixel size: each "pixel" in the final art is PIXEL x PIXEL screen pixels.
+PIXEL = 3
+
+
+def pixelate(img):
+    """Shrink to a low-res grid, snap alpha/colours, blow back up with hard edges."""
+    small_size = SIZE // PIXEL
+    small = img.scaled(
+        small_size, small_size,
+        Qt.AspectRatioMode.IgnoreAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    for y in range(small_size):
+        for x in range(small_size):
+            c = small.pixelColor(x, y)
+            if c.alpha() < 110:
+                small.setPixelColor(x, y, QColor(0, 0, 0, 0))
+                continue
+            # un-premultiply the edge blending, then posterize to a small palette
+            a = c.alphaF()
+            r, g, b = (min(255, int(v / a)) if a else 0 for v in (c.red(), c.green(), c.blue()))
+            r, g, b = (min(255, (v // 24) * 24 + 8) for v in (r, g, b))
+            small.setPixelColor(x, y, QColor(r, g, b, 255))
+    return small.scaled(
+        small_size * PIXEL, small_size * PIXEL,
+        Qt.AspectRatioMode.IgnoreAspectRatio,
+        Qt.TransformationMode.FastTransformation,
+    )
 
 
 def main():

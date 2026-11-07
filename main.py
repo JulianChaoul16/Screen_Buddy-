@@ -12,6 +12,11 @@ from PySide6.QtWidgets import (
 
 ASSETS = Path(__file__).parent / "assets"
 
+# Use your own sprite pack (assets/luffy/<activity>/*.png) when it's there,
+# otherwise the generated monkey in assets/<activity>/.
+if (ASSETS / "luffy" / "walk").is_dir():
+    ASSETS = ASSETS / "luffy"
+
 # activity name -> (ms per frame, how long it lasts in ms (min, max), moves?)
 ACTIVITIES = {
     "walk": (90, (4000, 9000), True),
@@ -124,16 +129,20 @@ class DesktopPet(QLabel):
 
         self.behavior_timer.start(random.randint(lo, hi))
 
+    
     def change_behavior(self):
+        # Pick a different activity, weighted so walking comes up most
         options = [n for n in self.frames if n != self.state]
         weights = [WEIGHTS.get(n, 1) for n in options]
         next_state = random.choices(options, weights)[0]
 
-        # Turn around now and then before walking off again
-        if next_state == "walk" and random.random() < 0.4:
-            self.direction *= -1
+        if next_state == "walk":
+            # Randomly choose a direction
+            self.direction = random.choice([-1, 1])
 
+        # Starts the animation/movement and schedules the next change
         self.set_state(next_state)
+
 
     # ------------------------------------------------------------ animation
 
