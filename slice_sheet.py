@@ -29,7 +29,7 @@ PICKS = {
     "dance": (28, list(range(9))),
     "wave": (60, list(range(5))),
     "eat": (37, list(range(11))),
-    "sleep": (47, [0, 1]),
+    "sleep": (26, [0, 1]),
     "carry": (47, [2, 3, 4, 5]),
     "land": (26, list(range(10))),
 }

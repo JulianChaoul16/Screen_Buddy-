@@ -1,16 +1,46 @@
+import os
 import random
+import subprocess
 import sys
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap, QTransform
+from PySide6.QtGui import QIcon, QPixmap, QTransform
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
     QMenu,
+    QSystemTrayIcon,
 )
 
 ASSETS = Path(__file__).parent / "assets"
+
+# Shortcut in the Windows Startup folder = "Start with Windows"
+STARTUP_LINK = (
+    Path(os.environ["APPDATA"])
+    / "Microsoft/Windows/Start Menu/Programs/Startup/Desktop Luffy.lnk"
+)
+
+
+def set_autostart(on):
+    if not on:
+        STARTUP_LINK.unlink(missing_ok=True)
+        return
+    # pythonw.exe = no console window
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    script = Path(__file__).resolve()
+    ps = (
+        f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut('{STARTUP_LINK}');"
+        f"$s.TargetPath = '{pythonw}';"
+        f"$s.Arguments = '\"{script}\"';"
+        f"$s.WorkingDirectory = '{script.parent}';"
+        "$s.Save()"
+    )
+    subprocess.run(
+        ["powershell", "-NoProfile", "-Command", ps],
+        check=True,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
 
 # Use your own sprite pack (assets/luffy/<activity>/*.png) when it's there,
 # otherwise the generated monkey in assets/<activity>/.
@@ -22,7 +52,7 @@ ACTIVITIES = {
     "walk": (90, (4000, 9000), True),
     "idle": (250, (2000, 4000), False),
     "eat": (300, (3000, 5000), False),
-    "sleep": (600, (5000, 9000), False),
+    "sleep": (1000, (30000, 60000), False),  # slow breathing, long naps
     "dance": (120, (3000, 5000), False),
     "wave": (220, (1500, 2500), False),
     "stretch": (90, (1500, 2500), False),
@@ -36,7 +66,7 @@ WEIGHTS = {
     "walk": 3,
     "idle": 3,
     "eat": 2,
-    "sleep": 3,
+    "sleep": 18,  # ~60% of picks
     "dance": 2,
     "wave": 1,
     "stretch": 1,
@@ -242,29 +272,55 @@ class DesktopPet(QLabel):
             self.anim_timer.stop()
             self.behavior_timer.stop()
 
-    def contextMenuEvent(self, event):
-        # Right click: pick an activity or exit
-        menu = QMenu(self)
+    def toggle_visible(self):
+        self.setVisible(not self.isVisible())
 
-        actions = {}
+    def pick(self, name):
+        self.is_paused = False
+        self.set_state(name)
+
+    def fill_menu(self, menu):
+        """One menu, used for both right-clicking Luffy and the tray icon."""
+        menu.clear()
         for name in self.frames:
             if WEIGHTS.get(name, 1):  # hide drag-only states
-                actions[menu.addAction(name.capitalize())] = name
+                menu.addAction(name.capitalize(), lambda n=name: self.pick(n))
         menu.addSeparator()
-        exit_action = menu.addAction("Exit")
+        menu.addAction("Resume" if self.is_paused else "Pause", self.toggle_pause)
+        menu.addAction("Hide" if self.isVisible() else "Show", self.toggle_visible)
+        autostart = menu.addAction(
+            "Start with Windows", lambda: set_autostart(not STARTUP_LINK.exists())
+        )
+        autostart.setCheckable(True)
+        autostart.setChecked(STARTUP_LINK.exists())
+        menu.addSeparator()
+        menu.addAction("Quit", QApplication.quit)
 
-        selected_action = menu.exec(event.globalPos())
-
-        if selected_action == exit_action:
-            QApplication.quit()
-        elif selected_action in actions:
-            self.is_paused = False
-            self.set_state(actions[selected_action])
+    def contextMenuEvent(self, event):
+        menu = QMenu(self)
+        self.fill_menu(menu)
+        menu.exec(event.globalPos())
 
 
 app = QApplication(sys.argv)
+app.setQuitOnLastWindowClosed(False)  # hiding Luffy shouldn't quit the app
 
 pet = DesktopPet()
 pet.show()
+
+# System tray: left-click shows/hides him, right-click opens the controls
+tray_icon = pet.frames.get("idle", pet.frames["walk"])[1][0]
+tray = QSystemTrayIcon(QIcon(tray_icon), app)
+tray.setToolTip("Desktop Luffy")
+tray_menu = QMenu()
+pet.fill_menu(tray_menu)
+tray_menu.aboutToShow.connect(lambda: pet.fill_menu(tray_menu))
+tray.setContextMenu(tray_menu)
+tray.activated.connect(
+    lambda reason: pet.toggle_visible()
+    if reason == QSystemTrayIcon.ActivationReason.Trigger
+    else None
+)
+tray.show()
 
 sys.exit(app.exec())
